@@ -1,65 +1,177 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import React, { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useAuth } from "../context/AuthContext";
+import clsx from "clsx";
+import { IoArrowBack } from "react-icons/io5";
+
+type ViewMode = "entry" | "login" | "register";
+
+export default function LoginPage() {
+  const [mode, setMode] = useState<ViewMode>("entry");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { login, register } = useAuth();
+
+  // Reset error when mode changes
+  useEffect(() => {
+    setError(null);
+  }, [mode]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password || (mode === "register" && !name)) {
+      setError("Please fill in all fields");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      if (mode === "login") {
+        await login(email, password);
+      } else {
+        await register(email, password, name);
+      }
+    } catch (err: any) {
+      console.error(err);
+      if (err.response?.data?.message) {
+        setError(
+          Array.isArray(err.response.data.message)
+            ? err.response.data.message[0]
+            : err.response.data.message
+        );
+      } else {
+        setError("An error occurred. Please try again.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-black text-white">
+      {/* Circle Reveal Animation */}
+      <motion.div
+        className="absolute bg-white rounded-full z-10"
+        initial={{ width: 50, height: 50, scale: 0 }}
+        animate={{ scale: mode !== 'entry' ? 250 : 0 }}
+        transition={{ duration: 0.6, ease: "easeInOut" }}
+        style={{ pointerEvents: 'none' }}
+      />
+
+      {/* Entry View (Black Background) */}
+      <AnimatePresence>
+        {mode === "entry" && (
+          <motion.div
+            key="entry"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="z-0 flex flex-col items-center w-full max-w-md px-6 text-center"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            <h1 className="text-4xl font-bold mb-2">Trippier</h1>
+            <p className="text-lg mb-8 opacity-80">Plan your next adventure</p>
+
+            <button
+              onClick={() => setMode("login")}
+              className="w-full py-4 bg-white text-black font-bold rounded-xl text-lg mb-4 hover:bg-gray-100 transition-colors"
+            >
+              Sign In
+            </button>
+            <button
+              onClick={() => setMode("register")}
+              className="w-full py-4 bg-white text-black font-bold rounded-xl text-lg hover:bg-gray-100 transition-colors"
+            >
+              Create Account
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Form View (White Background via Circle Overlay context usually, but here we place it on top with high Z) */}
+      <AnimatePresence>
+        {mode !== "entry" && (
+          <motion.div
+            key="form"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ delay: 0.2, duration: 0.3 }}
+            className="absolute inset-0 z-20 flex flex-col items-center justify-center p-6 text-black"
           >
-            Documentation
-          </a>
-        </div>
-      </main>
+            <button
+              onClick={() => setMode("entry")}
+              className="absolute top-10 left-6 p-2 rounded-full hover:bg-gray-100 transition-colors"
+            >
+              <IoArrowBack size={32} />
+            </button>
+
+            <div className="w-full max-w-md">
+              <h2 className="text-3xl font-bold mb-2 text-center mt-12">
+                {mode === "login" ? "Welcome Back" : "Join Us"}
+              </h2>
+              <p className="text-center text-gray-500 mb-8">
+                {mode === "login"
+                  ? "Sign in to continue"
+                  : "Create your account to start"}
+              </p>
+
+              {error && (
+                <div
+                  className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4"
+                  role="alert"
+                >
+                  <span className="block sm:inline">{error}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+                {mode === "register" && (
+                  <input
+                    type="text"
+                    placeholder="Full Name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-black transition-colors"
+                  />
+                )}
+                <input
+                  type="email"
+                  placeholder="Email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-black transition-colors"
+                />
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-black transition-colors"
+                />
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-4 bg-black text-white font-bold rounded-xl text-lg mt-4 hover:bg-gray-800 transition-colors disabled:opacity-50"
+                >
+                  {loading
+                    ? "Processing..."
+                    : mode === "login"
+                    ? "Login"
+                    : "Register"}
+                </button>
+              </form>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

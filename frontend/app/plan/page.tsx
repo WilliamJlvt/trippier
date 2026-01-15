@@ -1,0 +1,7 @@
+export default function PlanPage() {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-white dark:bg-black">
+        <h1 className="text-2xl font-bold">Plan Your Trip - Coming Soon</h1>
+      </div>
+    );
+  }
