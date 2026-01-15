@@ -1,6 +1,6 @@
 # 🌍 Trippier
 
-Trippier is a complete travel planning ecosystem featuring a web dashboard, a mobile application, and a backend API.
+Trippier is a complete travel planning ecosystem featuring a webapp, a mobile application, and a backend API.
 
 ## 🏗 Architecture
 
@@ -37,9 +37,9 @@ _Note: Run `adb reverse tcp:3001 tcp:3001` to connect your phone to the API._
 
 ## 🛠 Commands
 
-*   `make up`: Start services.
-*   `make down`: Stop services.
-*   `make fclean`: Deep clean (removes DB volumes and images).
+- `make up`: Start services.
+- `make down`: Stop services.
+- `make fclean`: Deep clean (removes DB volumes and images).
 
 ---
 
@@ -52,6 +52,7 @@ make build-apk
 ```
 
 **What this does:**
+
 1.  Builds a Docker image containing the Android SDK and Gradle.
 2.  Compiles the React Native code and Android assets.
 3.  Generates a signed (or unsigned) release APK.
