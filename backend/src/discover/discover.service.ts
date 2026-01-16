@@ -38,7 +38,7 @@ interface GooglePlace {
   };
   vicinity?: string;
   formatted_address?: string;
-  photos?: Array<{
+  photos?: Array<{ 
     photo_reference: string;
   }>;
 }
@@ -52,7 +52,7 @@ export class DiscoverService {
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
   ) {
-    this.googleApiKey = this.configService.get<string>('NEXT_PUBLIC_GOOGLE_MAPS_API_KEY');
+    this.googleApiKey = this.configService.get<string>('GOOGLE_MAPS_API_KEY');
   }
 
   async findNearbyPOIs(lat: number, lng: number, radius = 5, q?: string) {
@@ -92,44 +92,46 @@ export class DiscoverService {
       const results = response.data.results || [];
       results.sort((a, b) => (b.user_ratings_total || 0) - (a.user_ratings_total || 0));
 
-      const processedResults = await Promise.all(
-        results.slice(0, 15).map(async item => {
-          const cacheKey = item.place_id;
+      const processedResults: any[] = [];
+      const itemsToProcess = results.slice(0, 15);
 
-          if (!this.wikiCache.has(cacheKey)) {
-            const itemLat = item.geometry.location.lat;
-            const itemLng = item.geometry.location.lng;
+      for (const item of itemsToProcess) {
+        const cacheKey = item.place_id;
 
-            const [wikiFR, wikiEN, voyEN, googleDetails] = await Promise.all([
-              this.fetchWikiData('fr.wikipedia.org', item.name, itemLat, itemLng),
-              this.fetchWikiData('en.wikipedia.org', item.name, itemLat, itemLng),
-              this.fetchWikiData('en.wikivoyage.org', item.name, itemLat, itemLng, true),
-              this.fetchPlaceDetails(item.place_id),
-            ]);
+        if (!this.wikiCache.has(cacheKey)) {
+          const itemLat = item.geometry.location.lat;
+          const itemLng = item.geometry.location.lng;
 
-            this.wikiCache.set(cacheKey, {
-              description: voyEN?.summary || wikiFR?.summary || wikiEN?.summary || null,
-              wikipediaUrl: wikiFR?.url || wikiEN?.url || null,
-              wikivoyageUrl: voyEN?.url || null,
-              website: googleDetails?.website || null,
-              phoneNumber:
-                googleDetails?.formatted_phone_number ||
-                googleDetails?.international_phone_number ||
-                null,
-            });
-          }
+          const [wikiEN, voyEN, googleDetails] = await Promise.all([
+            this.fetchWikipedia('en.wikipedia.org', item.name, itemLat, itemLng),
+            this.fetchWikivoyage('en.wikivoyage.org', itemLat, itemLng),
+            this.fetchPlaceDetails(item.place_id),
+          ]);
 
-          const extra = this.wikiCache.get(cacheKey) as EnrichedWikiData;
-          return {
-            ...this.mapBasicInfo(item, lat, lng),
-            wikipediaUrl: extra.wikipediaUrl,
-            wikivoyageUrl: extra.wikivoyageUrl,
-            officialWebsite: extra.website,
-            phoneNumber: extra.phoneNumber,
-            description: extra.description,
+          const enriched: EnrichedWikiData = {
+            description: voyEN?.summary || wikiEN?.summary || null,
+            wikipediaUrl: wikiEN?.url || null,
+            wikivoyageUrl: voyEN?.url || null,
+            website: googleDetails?.website || null,
+            phoneNumber:
+              googleDetails?.formatted_phone_number ||
+              googleDetails?.international_phone_number ||
+              null,
           };
-        }),
-      );
+          this.wikiCache.set(cacheKey, enriched);
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        const extra = this.wikiCache.get(cacheKey) as EnrichedWikiData;
+        processedResults.push({
+          ...this.mapBasicInfo(item, lat, lng),
+          wikipediaUrl: extra.wikipediaUrl,
+          wikivoyageUrl: extra.wikivoyageUrl,
+          officialWebsite: extra.website,
+          phoneNumber: extra.phoneNumber,
+          description: extra.description,
+        });
+      }
 
       return processedResults;
     } catch (_error) {
@@ -160,7 +162,7 @@ export class DiscoverService {
   private async fetchPlaceDetails(placeId: string) {
     try {
       const response = await firstValueFrom(
-        this.httpService.get<{
+        this.httpService.get<{ 
           result: {
             website?: string;
             formatted_phone_number?: string;
@@ -180,20 +182,19 @@ export class DiscoverService {
     }
   }
 
-  private async fetchWikiData(
+  private async fetchWikipedia(
     domain: string,
     title: string,
     lat: number,
     lng: number,
-    isVoyage = false,
   ): Promise<WikiResult | null> {
     try {
       const apiUrl = `https://${domain}/w/api.php`;
       const headers = { 'User-Agent': 'TrippierBot/1.0' };
 
-      // 1. Try search by coords (Best for international places with nested articles)
+      // Pass 1: Geographic search (1km)
       const geoResponse = await firstValueFrom(
-        this.httpService.get<{ query?: { geosearch: Array<{ title: string; pageid: number }> } }>(
+        this.httpService.get<{ query?: { geosearch: Array<{ title: string; pageid: number; dist: number }> } }>(
           apiUrl,
           {
             headers,
@@ -201,8 +202,8 @@ export class DiscoverService {
               action: 'query',
               list: 'geosearch',
               gscoord: `${lat}|${lng}`,
-              gsradius: isVoyage ? 5000 : 1000, // Large radius for Wikivoyage (cities/districts)
-              gslimit: 5,
+              gsradius: 1000,
+              gslimit: 10,
               format: 'json',
               origin: '*',
             },
@@ -210,40 +211,70 @@ export class DiscoverService {
         ),
       );
 
-      let pages = geoResponse.data.query?.geosearch || [];
+      // Pass 2: Title search (opensearch)
+      const searchResponse = await firstValueFrom(
+        this.httpService.get<[string, string[]]>(apiUrl, {
+          headers,
+          params: {
+            action: 'opensearch',
+            search: title,
+            limit: 5,
+            namespace: 0,
+            format: 'json',
+            origin: '*',
+          },
+        }),
+      );
 
-      // 2. Try search by title if no coords match
-      if (pages.length === 0) {
-        const searchResponse = await firstValueFrom(
-          this.httpService.get<[string, string[]]>(apiUrl, {
-            headers,
-            params: {
-              action: 'opensearch',
-              search: title,
-              limit: 1,
-              namespace: 0,
-              format: 'json',
-              origin: '*',
-            },
-          }),
-        );
-        const bestTitle = searchResponse.data[1]?.[0];
-        if (bestTitle) {
-          pages = [{ title: bestTitle, pageid: 0 }]; // pageid will be solved by titles param
+      const geoResults = geoResponse.data.query?.geosearch || [];
+      const searchResults = searchResponse.data[1] || [];
+
+      // Scoring
+      const scores = new Map<string, { pageid?: number; score: number }>();
+      const normalizedTitle = title.toLowerCase();
+
+      // Score geo results
+      geoResults.forEach((res, index) => {
+        const score = 100 - index * 5; // Base points for being nearby
+        scores.set(res.title, { pageid: res.pageid, score });
+      });
+
+      // Score search results
+      searchResults.forEach((resTitle, index) => {
+        const existing = scores.get(resTitle);
+        let score = (existing?.score || 0) + (50 - index * 10);
+
+        // Bonus for name matching
+        const resTitleLower = resTitle.toLowerCase();
+        if (resTitleLower === normalizedTitle) {
+          score += 150;
+        } else if (resTitleLower.includes(normalizedTitle) || normalizedTitle.includes(resTitleLower)) {
+          score += 70;
+        }
+
+        // Cross-match bonus
+        if (existing) {
+          score += 200;
+        }
+
+        scores.set(resTitle, { pageid: existing?.pageid, score });
+      });
+
+      // Find best match
+      let bestTitle: string | null = null;
+      let maxScore = -1;
+
+      for (const [resTitle, data] of scores.entries()) {
+        if (data.score > maxScore) {
+          maxScore = data.score;
+          bestTitle = resTitle;
         }
       }
 
-      if (pages.length > 0) {
-        // Match logic: Prefer title that contains our place name or vice versa
-        const bestPage =
-          pages.find(
-            p =>
-              title.toLowerCase().includes(p.title.toLowerCase()) ||
-              p.title.toLowerCase().includes(title.toLowerCase()),
-          ) || pages[0];
-
+      if (bestTitle && maxScore > 30) {
+        const bestData = scores.get(bestTitle)!;
         const detailsResponse = await firstValueFrom(
-          this.httpService.get<{
+          this.httpService.get<{ 
             query: { pages: Record<string, { fullurl: string; extract?: string }> };
           }>(apiUrl, {
             headers,
@@ -253,7 +284,7 @@ export class DiscoverService {
               exintro: true,
               explaintext: true,
               inprop: 'url',
-              [bestPage.pageid ? 'pageids' : 'titles']: bestPage.pageid || bestPage.title,
+              [bestData.pageid ? 'pageids' : 'titles']: bestData.pageid || bestTitle,
               format: 'json',
               origin: '*',
             },
@@ -262,6 +293,72 @@ export class DiscoverService {
 
         const pagesData = detailsResponse.data.query.pages;
         const pageData = pagesData[Object.keys(pagesData)[0]];
+
+        if (pageData && !('missing' in pageData)) {
+          return {
+            url: pageData.fullurl,
+            summary: pageData.extract ? pageData.extract.split('\n')[0] : '',
+          };
+        }
+      }
+    } catch (_e) {
+      return null;
+    }
+    return null;
+  }
+
+  private async fetchWikivoyage(
+    domain: string,
+    lat: number,
+    lng: number,
+  ): Promise<WikiResult | null> {
+    try {
+      const apiUrl = `https://${domain}/w/api.php`;
+      const headers = { 'User-Agent': 'TrippierBot/1.0' };
+
+      // Purely geographic for Wikivoyage (Zone article)
+      const geoResponse = await firstValueFrom(
+        this.httpService.get<{ query?: { geosearch: Array<{ title: string; pageid: number }> } }>(
+          apiUrl,
+          {
+            headers,
+            params: {
+              action: 'query',
+              list: 'geosearch',
+              gscoord: `${lat}|${lng}`,
+              gsradius: 5000,
+              gslimit: 1,
+              format: 'json',
+              origin: '*',
+            },
+          },
+        ),
+      );
+
+      const page = geoResponse.data.query?.geosearch?.[0];
+
+      if (page) {
+        const detailsResponse = await firstValueFrom(
+          this.httpService.get<{ 
+            query: { pages: Record<string, { fullurl: string; extract?: string }> };
+          }>(apiUrl, {
+            headers,
+            params: {
+              action: 'query',
+              prop: 'extracts|info',
+              exintro: true,
+              explaintext: true,
+              inprop: 'url',
+              pageids: page.pageid,
+              format: 'json',
+              origin: '*',
+            },
+          }),
+        );
+
+        const pagesData = detailsResponse.data.query.pages;
+        const pageData = pagesData[Object.keys(pagesData)[0]];
+
         if (pageData && !('missing' in pageData)) {
           return {
             url: pageData.fullurl,

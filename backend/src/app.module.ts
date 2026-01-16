@@ -20,6 +20,7 @@ import { DiscoverModule } from './discover/discover.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: ['.env', '../.env'],
     }),
     PrismaModule,
     UsersModule,
