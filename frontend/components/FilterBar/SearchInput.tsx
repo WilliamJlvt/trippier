@@ -20,7 +20,7 @@ interface SearchInputProps {
   inputValue: string;
   setInputValue: (val: string) => void;
   onToggle: (expanded: boolean) => void;
-  inputRef: React.RefObject<HTMLInputElement>;
+  inputRef: React.RefObject<HTMLInputElement | null>;
   isSmallScreen: boolean;
   collapseSearch: () => void;
 }
